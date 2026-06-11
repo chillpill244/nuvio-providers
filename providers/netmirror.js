@@ -1,6 +1,6 @@
 /**
  * netmirror - Built from src/netmirror/
- * Generated: 2026-06-11T05:08:35.721Z
+ * Generated: 2026-06-11T06:12:20.833Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -114,7 +114,7 @@ function parseSeasonNumber(s) {
 }
 function resolveForPlatform(apiBase, ott, title, mediaType, season, episode) {
   return __async(this, null, function* () {
-    var _a, _b;
+    var _a;
     const r = yield fetch(`${apiBase}/newtv/search.php?s=${encodeURIComponent(title)}`, {
       headers: __spreadProps(__spreadValues({}, NEWTV_HEADERS), { Ott: ott })
     });
@@ -142,34 +142,24 @@ function resolveForPlatform(apiBase, ott, title, mediaType, season, episode) {
           continue;
         targetId = post.main_id || result.id;
       } else {
+        const targetSeason = (post.season || []).find((s) => parseSeasonNumber(s.s) == season);
+        if (!targetSeason)
+          continue;
         const episodes = [];
-        const embedded = (post.episodes || []).filter(Boolean);
-        if (embedded.length) {
-          const selSeason = (post.season || []).find((s) => s.selected);
-          const selNum = selSeason ? parseSeasonNumber(selSeason.s) : parseSeasonNumber((_b = embedded[0].info) == null ? void 0 : _b[1]);
-          for (const ep2 of embedded) {
-            episodes.push({ id: ep2.id, s: selNum, ep: parseInt(ep2.ep, 10) });
+        let page = 1;
+        for (let i = 0; i < 20; i++) {
+          const epR = yield fetch(`${apiBase}/newtv/episodes.php?id=${targetSeason.id}&page=${page}`, {
+            headers: __spreadProps(__spreadValues({}, NEWTV_HEADERS), { Ott: ott })
+          });
+          const epData = yield epR.json();
+          for (const ep2 of (epData.episodes || []).filter(Boolean)) {
+            episodes.push({ id: ep2.id, ep: parseInt(ep2.ep, 10) });
           }
+          if (epData.nextPageShow !== 1)
+            break;
+          page++;
         }
-        for (const s of post.season || []) {
-          if (s.selected)
-            continue;
-          const sNum = parseSeasonNumber(s.s);
-          let page = 1;
-          for (let i = 0; i < 20; i++) {
-            const epR = yield fetch(`${apiBase}/newtv/episodes.php?id=${s.id}&page=${page}`, {
-              headers: __spreadProps(__spreadValues({}, NEWTV_HEADERS), { Ott: ott })
-            });
-            const epData = yield epR.json();
-            for (const ep2 of (epData.episodes || []).filter(Boolean)) {
-              episodes.push({ id: ep2.id, s: sNum, ep: parseInt(ep2.ep, 10) });
-            }
-            if (epData.nextPageShow !== 1)
-              break;
-            page++;
-          }
-        }
-        const ep = episodes.find((e) => e.s == season && e.ep == episode);
+        const ep = episodes.find((e) => e.ep == episode);
         if (!ep)
           continue;
         targetId = ep.id;

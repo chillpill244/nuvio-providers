@@ -103,39 +103,28 @@ async function resolveForPlatform(apiBase, ott, title, mediaType, season, episod
       if (post.type === "t") continue;
       targetId = post.main_id || result.id;
     } else {
+      // Find the season entry matching the requested season number
+      const targetSeason = (post.season || []).find(s => parseSeasonNumber(s.s) == season);
+      if (!targetSeason) continue;
+
+      // Fetch all episode pages for this season from episodes.php
+      // (post.php only embeds page 1 of the selected season, so always use episodes.php)
       const episodes = [];
-
-      // Collect embedded episodes (last-loaded season)
-      const embedded = (post.episodes || []).filter(Boolean);
-      if (embedded.length) {
-        // Find which season these belong to via the selected flag
-        const selSeason = (post.season || []).find(s => s.selected);
-        const selNum = selSeason ? parseSeasonNumber(selSeason.s) : parseSeasonNumber(embedded[0].info?.[1]);
-        for (const ep of embedded) {
-          episodes.push({ id: ep.id, s: selNum, ep: parseInt(ep.ep, 10) });
+      let page = 1;
+      for (let i = 0; i < 20; i++) {
+        const epR = await fetch(`${apiBase}/newtv/episodes.php?id=${targetSeason.id}&page=${page}`, {
+          headers: { ...NEWTV_HEADERS, Ott: ott },
+        });
+        const epData = await epR.json();
+        for (const ep of (epData.episodes || []).filter(Boolean)) {
+          episodes.push({ id: ep.id, ep: parseInt(ep.ep, 10) });
         }
-      }
-
-      // Fetch all other seasons from episodes.php
-      for (const s of (post.season || [])) {
-        if (s.selected) continue;
-        const sNum = parseSeasonNumber(s.s);
-        let page = 1;
-        for (let i = 0; i < 20; i++) {
-          const epR = await fetch(`${apiBase}/newtv/episodes.php?id=${s.id}&page=${page}`, {
-            headers: { ...NEWTV_HEADERS, Ott: ott },
-          });
-          const epData = await epR.json();
-          for (const ep of (epData.episodes || []).filter(Boolean)) {
-            episodes.push({ id: ep.id, s: sNum, ep: parseInt(ep.ep, 10) });
-          }
-          if (epData.nextPageShow !== 1) break;
-          page++;
-        }
+        if (epData.nextPageShow !== 1) break;
+        page++;
       }
 
       // Use == (loose) so number/string mismatches don't cause silent failures
-      const ep = episodes.find(e => e.s == season && e.ep == episode);
+      const ep = episodes.find(e => e.ep == episode);
       if (!ep) continue;
       targetId = ep.id;
     }
