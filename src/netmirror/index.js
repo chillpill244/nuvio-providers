@@ -1,6 +1,5 @@
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 
-// Disney+ shares the Hotstar backend (ott="hs") on the NewTV API
 const PLATFORMS = [
   { key: "nf", name: "Netflix" },
   { key: "pv", name: "Prime Video" },
@@ -45,17 +44,32 @@ const NEWTV_DOMAINS = [
 
 let resolvedApiUrl = "";
 
+function safeAtob(encoded) {
+  if (typeof atob === "function") return atob(encoded);
+  return Buffer.from(encoded, "base64").toString("binary");
+}
+
+function buildHeaders(ott, extra) {
+  const h = {};
+  const keys = Object.keys(NEWTV_HEADERS);
+  for (let i = 0; i < keys.length; i++) h[keys[i]] = NEWTV_HEADERS[keys[i]];
+  h["Ott"] = ott;
+  if (extra) {
+    const ek = Object.keys(extra);
+    for (let i = 0; i < ek.length; i++) h[ek[i]] = extra[ek[i]];
+  }
+  return h;
+}
+
 async function resolveApiUrl() {
   if (resolvedApiUrl) return resolvedApiUrl;
   for (let di = 0; di < NEWTV_DOMAINS.length; di++) {
-    const base = atob(NEWTV_DOMAINS[di]).replace(/\/$/, "");
+    const base = safeAtob(NEWTV_DOMAINS[di]).replace(/\/$/, "");
     try {
-      const r = await fetch(base + "/checknewtv.php", {
-        headers: NEWTV_HEADERS,
-      });
+      const r = await fetch(base + "/checknewtv.php", { headers: NEWTV_HEADERS });
       const d = await r.json();
       if (d.token_hash) {
-        resolvedApiUrl = atob(d.token_hash).replace(/\/$/, "");
+        resolvedApiUrl = safeAtob(d.token_hash).replace(/\/$/, "");
         return resolvedApiUrl;
       }
     } catch (_) {}
@@ -63,90 +77,118 @@ async function resolveApiUrl() {
   throw new Error("NetMirror: failed to resolve API URL");
 }
 
-function normalize(s) {
-  return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-// Parses season number from formats like "Season 1 (8 EP)", "S1", "1"
-function parseSeasonNumber(s) {
-  const m = String(s || "").match(/\d+/);
-  return m ? parseInt(m[0], 10) : null;
-}
-
-async function resolveForPlatform(apiBase, ott, title, mediaType, season, episode) {
-  const r = await fetch(`${apiBase}/newtv/search.php?s=${encodeURIComponent(title)}`, {
-    headers: { ...NEWTV_HEADERS, Ott: ott },
-  });
-  const data = await r.json();
-  if (!data.searchResult || !data.searchResult.length) return null;
-
-  const wanted = normalize(title);
-  const results = data.searchResult.slice(0, 3).sort((a, b) => {
-    const an = normalize(a.t), bn = normalize(b.t);
-    if (an === wanted && bn !== wanted) return -1;
-    if (bn === wanted && an !== wanted) return 1;
-    return 0;
-  });
-
-  // Use indexed for loops (not for...of) to avoid Hermes generator + for-of edge cases
-  for (let ri = 0; ri < results.length; ri++) {
-    const result = results[ri];
-    const postR = await fetch(`${apiBase}/newtv/post.php?id=${result.id}`, {
-      headers: { ...NEWTV_HEADERS, Ott: ott, Lastep: "", Usertoken: "" },
+async function fetchEpisodesPage(seasonId, startPage, seasonNumber, ott, apiBase) {
+  const episodes = [];
+  let pg = startPage;
+  while (true) {
+    const r = await fetch(apiBase + "/newtv/episodes.php?id=" + seasonId + "&page=" + pg, {
+      headers: buildHeaders(ott),
     });
-    const post = await postR.json();
-
-    let targetId = null;
-
-    if (mediaType === "movie") {
-      if (post.type !== "t") {
-        targetId = post.main_id || result.id;
-      }
-    } else {
-      const seasons = post.season || [];
-      let targetSeasonId = null;
-      for (let si = 0; si < seasons.length; si++) {
-        if (parseSeasonNumber(seasons[si].s) == season) {
-          targetSeasonId = seasons[si].id;
-          break;
-        }
-      }
-      if (targetSeasonId) {
-        const episodes = [];
-        let page = 1;
-        for (let pi = 0; pi < 20; pi++) {
-          const epR = await fetch(`${apiBase}/newtv/episodes.php?id=${targetSeasonId}&page=${page}`, {
-            headers: { ...NEWTV_HEADERS, Ott: ott },
-          });
-          const epData = await epR.json();
-          const epList = epData.episodes || [];
-          for (let ei = 0; ei < epList.length; ei++) {
-            const ep = epList[ei];
-            if (ep) episodes.push({ id: ep.id, ep: parseInt(ep.ep, 10) });
-          }
-          if (epData.nextPageShow !== 1) break;
-          page++;
-        }
-        for (let ei = 0; ei < episodes.length; ei++) {
-          if (episodes[ei].ep == episode) {
-            targetId = episodes[ei].id;
-            break;
-          }
-        }
-      }
+    const data = await r.json();
+    const epList = data.episodes || [];
+    for (let ei = 0; ei < epList.length; ei++) {
+      const ep = epList[ei];
+      if (!ep) continue;
+      const epNum = ep.ep ? parseInt(ep.ep, 10) : null;
+      episodes.push({ id: ep.id, s: seasonNumber, ep: epNum });
     }
+    if (data.nextPageShow !== 1) break;
+    pg++;
+  }
+  return episodes;
+}
 
-    if (targetId) {
-      const playerR = await fetch(`${apiBase}/newtv/player.php?id=${targetId}`, {
-        headers: { ...NEWTV_HEADERS, Ott: ott, Usertoken: "" },
-      });
-      const player = await playerR.json();
-      if (player.status === "ok" && player.video_link) {
-        return { url: player.video_link, referer: player.referer || apiBase };
-      }
+async function getAllEpisodes(postData, ott, apiBase) {
+  const episodes = [];
+  const seasonList = postData.season || [];
+
+  // Find the selected season index (used to derive its season number)
+  let selectedIdx = -1;
+  for (let i = 0; i < seasonList.length; i++) {
+    if (seasonList[i].selected === true) { selectedIdx = i; break; }
+  }
+  const selectedSeasonId = selectedIdx >= 0 ? seasonList[selectedIdx].id : postData.nextPageSeason;
+  const selectedSeasonNumber = selectedIdx >= 0 ? selectedIdx + 1 : null;
+
+  // Collect page-1 episodes embedded in post response
+  const embedded = postData.episodes || [];
+  for (let i = 0; i < embedded.length; i++) {
+    const ep = embedded[i];
+    if (!ep) continue;
+    const epNum = ep.ep ? parseInt(ep.ep, 10) : null;
+    episodes.push({ id: ep.id, s: selectedSeasonNumber, ep: epNum });
+  }
+
+  // Fetch remaining pages of the selected season if needed
+  if (postData.nextPageShow === 1 && selectedSeasonId) {
+    const more = await fetchEpisodesPage(selectedSeasonId, 2, selectedSeasonNumber, ott, apiBase);
+    for (let i = 0; i < more.length; i++) episodes.push(more[i]);
+  }
+
+  // Fetch all non-selected seasons
+  for (let idx = 0; idx < seasonList.length; idx++) {
+    const s = seasonList[idx];
+    if (s.id !== selectedSeasonId && s.id) {
+      const more = await fetchEpisodesPage(s.id, 1, idx + 1, ott, apiBase);
+      for (let i = 0; i < more.length; i++) episodes.push(more[i]);
     }
   }
 
+  return episodes;
+}
+
+async function fetchFromPlatform(ott, platformName, title, mediaType, season, episode) {
+  const apiBase = await resolveApiUrl();
+
+  const searchR = await fetch(apiBase + "/newtv/search.php?s=" + encodeURIComponent(title), {
+    headers: buildHeaders(ott),
+  });
+  const searchData = await searchR.json();
+  if (!searchData.searchResult || searchData.searchResult.length === 0) return null;
+
+  const contentId = searchData.searchResult[0].id;
+
+  const postR = await fetch(apiBase + "/newtv/post.php?id=" + contentId, {
+    headers: buildHeaders(ott, { Lastep: "", Usertoken: "" }),
+  });
+  const postData = await postR.json();
+
+  let targetId;
+
+  if (mediaType === "tv") {
+    const allEps = await getAllEpisodes(postData, ott, apiBase);
+    let found = null;
+    for (let i = 0; i < allEps.length; i++) {
+      if (allEps[i] && allEps[i].s === season && allEps[i].ep === episode) {
+        found = allEps[i];
+        break;
+      }
+    }
+    if (!found) return null;
+    targetId = found.id;
+  } else {
+    const isSeries = postData.type === "t" ||
+      (postData.episodes && postData.episodes.filter(function(e) { return e !== null; }).length > 0);
+    if (isSeries) return null;
+    targetId = postData.main_id || contentId;
+  }
+
+  const playerR = await fetch(apiBase + "/newtv/player.php?id=" + targetId, {
+    headers: buildHeaders(ott, { Usertoken: "" }),
+  });
+  const player = await playerR.json();
+
+  if (player.status === "ok" && player.video_link) {
+    return {
+      name: "NetMirror / " + platformName,
+      title: mediaType === "tv"
+        ? "S" + String(season).padStart(2, "0") + "E" + String(episode).padStart(2, "0") + " • HLS"
+        : title + " • HLS",
+      url: player.video_link,
+      quality: "Auto",
+      headers: { Referer: player.referer || apiBase },
+    };
+  }
   return null;
 }
 
@@ -154,44 +196,33 @@ async function getStreams(tmdbId, mediaType, season, episode) {
   try {
     const tmdbType = mediaType === "tv" ? "tv" : "movie";
     const tmdbR = await fetch(
-      `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${TMDB_API_KEY}`
+      "https://api.themoviedb.org/3/" + tmdbType + "/" + tmdbId + "?api_key=" + TMDB_API_KEY,
+      { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } }
     );
     const tmdbData = await tmdbR.json();
     const title = mediaType === "tv" ? tmdbData.name : tmdbData.title;
     if (!title) return [];
 
-    console.log(`[NetMirror] ${mediaType} "${title}" S${season}E${episode}`);
+    console.log("[NetMirror] " + mediaType + " \"" + title + "\" S" + season + "E" + episode);
 
-    const apiBase = await resolveApiUrl();
     const streams = [];
-    const seen = new Set();
-
     for (let pi = 0; pi < PLATFORMS.length; pi++) {
-      const platform = PLATFORMS[pi];
+      const p = PLATFORMS[pi];
       try {
-        const result = await resolveForPlatform(apiBase, platform.key, title, mediaType, season, episode);
-        if (result && !seen.has(result.url)) {
-          seen.add(result.url);
-          streams.push({
-            name: "NetMirror / " + platform.name,
-            title:
-              mediaType === "tv"
-                ? "S" + String(season).padStart(2, "0") + "E" + String(episode).padStart(2, "0") + " • HLS"
-                : title + " • HLS",
-            url: result.url,
-            quality: "Auto",
-            headers: { Referer: result.referer },
-          });
+        const result = await fetchFromPlatform(p.key, p.name, title, mediaType, season, episode);
+        if (result) {
+          streams.push(result);
+          console.log("[NetMirror] " + p.key + " ok: " + result.url);
         }
       } catch (e) {
-        console.log("[NetMirror] " + platform.key + " failed: " + e.message);
+        console.log("[NetMirror] " + p.key + " failed: " + e.message);
       }
     }
 
-    console.log(`[NetMirror] ${streams.length} stream(s) found`);
+    console.log("[NetMirror] " + streams.length + " stream(s) found");
     return streams;
   } catch (e) {
-    console.error(`[NetMirror] Fatal: ${e.message}`);
+    console.error("[NetMirror] Fatal: " + e.message);
     return [];
   }
 }
