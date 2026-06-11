@@ -1,26 +1,28 @@
 [
   {
-    "id": "template-provider",
-    "name": "Template Provider",
-    "description": "A starter template for creating Nuvio providers.",
-    "version": "1.0.0",
-    "author": "Your Name",
+    "id": "netmirror",
+    "name": "NetMirror",
+    "description": "Streaming links from NetMirror (Netflix, Prime Video, Hotstar, Disney+). Automatically disabled on iOS due to compatibility issues.",
+    "version": "1.0.3",
+    "author": "Nuvio Team",
     "supportedTypes": [
       "movie",
       "tv"
     ],
-    "filename": "providers/template.js",
-    "enabled": false,
-    "logo": "",
+    "filename": "providers/netmirror.js",
+    "enabled": true,
+    "hasSettings": true,
+    "logo": "https://net22.cc/favicon.ico",
     "contentLanguage": [
       "en"
     ],
     "formats": [
-      "mp4",
-      "mkv"
+      "m3u8"
     ],
     "limited": false,
-    "disabledPlatforms": [],
-    "supportsExternalPlayer": true
+    "disabledPlatforms": [
+      "ios"
+    ],
+    "supportsExternalPlayer": false
   }
 ]
