@@ -47,10 +47,10 @@ let resolvedApiUrl = "";
 
 async function resolveApiUrl() {
   if (resolvedApiUrl) return resolvedApiUrl;
-  for (const enc of NEWTV_DOMAINS) {
-    const base = atob(enc).replace(/\/$/, "");
+  for (let di = 0; di < NEWTV_DOMAINS.length; di++) {
+    const base = atob(NEWTV_DOMAINS[di]).replace(/\/$/, "");
     try {
-      const r = await fetch(`${base}/checknewtv.php`, {
+      const r = await fetch(base + "/checknewtv.php", {
         headers: NEWTV_HEADERS,
       });
       const d = await r.json();
@@ -78,63 +78,72 @@ async function resolveForPlatform(apiBase, ott, title, mediaType, season, episod
     headers: { ...NEWTV_HEADERS, Ott: ott },
   });
   const data = await r.json();
-  if (!data.searchResult?.length) return null;
+  if (!data.searchResult || !data.searchResult.length) return null;
 
-  // Rank: exact normalized match first, prefix match second
   const wanted = normalize(title);
-  const results = [...data.searchResult];
-  results.sort((a, b) => {
+  const results = data.searchResult.slice(0, 3).sort((a, b) => {
     const an = normalize(a.t), bn = normalize(b.t);
     if (an === wanted && bn !== wanted) return -1;
     if (bn === wanted && an !== wanted) return 1;
     return 0;
   });
 
-  for (const result of results.slice(0, 3)) {
+  // Use indexed for loops (not for...of) to avoid Hermes generator + for-of edge cases
+  for (let ri = 0; ri < results.length; ri++) {
+    const result = results[ri];
     const postR = await fetch(`${apiBase}/newtv/post.php?id=${result.id}`, {
       headers: { ...NEWTV_HEADERS, Ott: ott, Lastep: "", Usertoken: "" },
     });
     const post = await postR.json();
 
-    let targetId;
+    let targetId = null;
 
     if (mediaType === "movie") {
-      // Skip if this post is actually a series
-      if (post.type === "t") continue;
-      targetId = post.main_id || result.id;
-    } else {
-      // Find the season entry matching the requested season number
-      const targetSeason = (post.season || []).find(s => parseSeasonNumber(s.s) == season);
-      if (!targetSeason) continue;
-
-      // Fetch all episode pages for this season from episodes.php
-      // (post.php only embeds page 1 of the selected season, so always use episodes.php)
-      const episodes = [];
-      let page = 1;
-      for (let i = 0; i < 20; i++) {
-        const epR = await fetch(`${apiBase}/newtv/episodes.php?id=${targetSeason.id}&page=${page}`, {
-          headers: { ...NEWTV_HEADERS, Ott: ott },
-        });
-        const epData = await epR.json();
-        for (const ep of (epData.episodes || []).filter(Boolean)) {
-          episodes.push({ id: ep.id, ep: parseInt(ep.ep, 10) });
-        }
-        if (epData.nextPageShow !== 1) break;
-        page++;
+      if (post.type !== "t") {
+        targetId = post.main_id || result.id;
       }
-
-      // Use == (loose) so number/string mismatches don't cause silent failures
-      const ep = episodes.find(e => e.ep == episode);
-      if (!ep) continue;
-      targetId = ep.id;
+    } else {
+      const seasons = post.season || [];
+      let targetSeasonId = null;
+      for (let si = 0; si < seasons.length; si++) {
+        if (parseSeasonNumber(seasons[si].s) == season) {
+          targetSeasonId = seasons[si].id;
+          break;
+        }
+      }
+      if (targetSeasonId) {
+        const episodes = [];
+        let page = 1;
+        for (let pi = 0; pi < 20; pi++) {
+          const epR = await fetch(`${apiBase}/newtv/episodes.php?id=${targetSeasonId}&page=${page}`, {
+            headers: { ...NEWTV_HEADERS, Ott: ott },
+          });
+          const epData = await epR.json();
+          const epList = epData.episodes || [];
+          for (let ei = 0; ei < epList.length; ei++) {
+            const ep = epList[ei];
+            if (ep) episodes.push({ id: ep.id, ep: parseInt(ep.ep, 10) });
+          }
+          if (epData.nextPageShow !== 1) break;
+          page++;
+        }
+        for (let ei = 0; ei < episodes.length; ei++) {
+          if (episodes[ei].ep == episode) {
+            targetId = episodes[ei].id;
+            break;
+          }
+        }
+      }
     }
 
-    const playerR = await fetch(`${apiBase}/newtv/player.php?id=${targetId}`, {
-      headers: { ...NEWTV_HEADERS, Ott: ott, Usertoken: "" },
-    });
-    const player = await playerR.json();
-    if (player.status === "ok" && player.video_link) {
-      return { url: player.video_link, referer: player.referer || apiBase };
+    if (targetId) {
+      const playerR = await fetch(`${apiBase}/newtv/player.php?id=${targetId}`, {
+        headers: { ...NEWTV_HEADERS, Ott: ott, Usertoken: "" },
+      });
+      const player = await playerR.json();
+      if (player.status === "ok" && player.video_link) {
+        return { url: player.video_link, referer: player.referer || apiBase };
+      }
     }
   }
 
@@ -157,24 +166,25 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const streams = [];
     const seen = new Set();
 
-    for (const { key, name } of PLATFORMS) {
+    for (let pi = 0; pi < PLATFORMS.length; pi++) {
+      const platform = PLATFORMS[pi];
       try {
-        const result = await resolveForPlatform(apiBase, key, title, mediaType, season, episode);
+        const result = await resolveForPlatform(apiBase, platform.key, title, mediaType, season, episode);
         if (result && !seen.has(result.url)) {
           seen.add(result.url);
           streams.push({
-            name: `NetMirror / ${name}`,
+            name: "NetMirror / " + platform.name,
             title:
               mediaType === "tv"
-                ? `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")} • HLS`
-                : `${title} • HLS`,
+                ? "S" + String(season).padStart(2, "0") + "E" + String(episode).padStart(2, "0") + " • HLS"
+                : title + " • HLS",
             url: result.url,
             quality: "Auto",
             headers: { Referer: result.referer },
           });
         }
       } catch (e) {
-        console.log(`[NetMirror] ${key} failed: ${e.message}`);
+        console.log("[NetMirror] " + platform.key + " failed: " + e.message);
       }
     }
 
