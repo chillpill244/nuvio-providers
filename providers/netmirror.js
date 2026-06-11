@@ -1,6 +1,6 @@
 /**
  * netmirror - Built from src/netmirror/
- * Generated: 2026-06-06T08:44:04.688Z
+ * Generated: 2026-06-11T05:08:35.721Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -42,47 +42,14 @@ var __async = (__this, __arguments, generator) => {
   });
 };
 
-// src/netmirror/constants.js
+// src/netmirror/index.js
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-var PLATFORM_MAP = {
-  netflix: {
-    ott: "nf",
-    search: "/mobile/search.php",
-    post: "/mobile/post.php",
-    episodes: "/mobile/episodes.php",
-    playlist: "/mobile/playlist.php",
-    img: "poster/v",
-    epImg: "epimg/150"
-  },
-  primevideo: {
-    ott: "pv",
-    search: "/mobile/pv/search.php",
-    post: "/mobile/pv/post.php",
-    episodes: "/mobile/pv/episodes.php",
-    playlist: "/mobile/pv/playlist.php",
-    img: "pv/v",
-    epImg: "pvepimg"
-  },
-  hotstar: {
-    ott: "hs",
-    search: "/mobile/hs/search.php",
-    post: "/mobile/hs/post.php",
-    episodes: "/mobile/hs/episodes.php",
-    playlist: "/mobile/hs/playlist.php",
-    img: "hs/v",
-    epImg: "hsepimg"
-  },
-  disney: {
-    ott: "hs",
-    search: "/mobile/hs/search.php",
-    post: "/mobile/hs/post.php",
-    episodes: "/mobile/hs/episodes.php",
-    playlist: "/mobile/hs/playlist.php",
-    img: "hs/v",
-    epImg: "hsepimg"
-  }
-};
-var NEW_TV_BASE_HEADERS = {
+var PLATFORMS = [
+  { key: "nf", name: "Netflix" },
+  { key: "pv", name: "Prime Video" },
+  { key: "hs", name: "Hotstar / Disney+" }
+];
+var NEWTV_HEADERS = {
   "Cache-Control": "no-cache, no-store, must-revalidate",
   "Pragma": "no-cache",
   "Expires": "0",
@@ -90,7 +57,7 @@ var NEW_TV_BASE_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0",
   "Accept": "application/json, text/plain, */*"
 };
-var NEW_TV_DOMAINS = [
+var NEWTV_DOMAINS = [
   "aHR0cHM6Ly9tb2JpbGVkZXRlY3RzLmNvbQ==",
   "aHR0cHM6Ly9tb2JpbGVkZXRlY3QuYXBw",
   "aHR0cHM6Ly9tb2JpZGV0ZWN0LmFydA==",
@@ -116,184 +83,146 @@ var NEW_TV_DOMAINS = [
   "aHR0cHM6Ly9tb2JpZGV0ZWN0cy50b3A=",
   "aHR0cHM6Ly9tb2JpZGV0ZWN0cy54eXo="
 ];
-
-// src/netmirror/utils.js
 var resolvedApiUrl = "";
-function safeAtob(encoded) {
-  if (typeof atob === "function") {
-    return atob(encoded);
-  }
-  return Buffer.from(encoded, "base64").toString("binary");
-}
 function resolveApiUrl() {
   return __async(this, null, function* () {
     if (resolvedApiUrl)
       return resolvedApiUrl;
-    for (const encoded of NEW_TV_DOMAINS) {
-      const base = safeAtob(encoded).replace(/\/$/, "");
+    for (const enc of NEWTV_DOMAINS) {
+      const base = atob(enc).replace(/\/$/, "");
       try {
-        const response = yield fetch(`${base}/checknewtv.php`, {
-          headers: __spreadProps(__spreadValues({}, NEW_TV_BASE_HEADERS), { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" })
+        const r = yield fetch(`${base}/checknewtv.php`, {
+          headers: NEWTV_HEADERS
         });
-        const data = yield response.json();
-        const tokenHash = data.token_hash;
-        if (tokenHash) {
-          resolvedApiUrl = safeAtob(tokenHash).replace(/\/$/, "");
+        const d = yield r.json();
+        if (d.token_hash) {
+          resolvedApiUrl = atob(d.token_hash).replace(/\/$/, "");
           return resolvedApiUrl;
         }
-      } catch (error) {
+      } catch (_) {
       }
     }
-    throw new Error("Failed to resolve NewTV API base URL");
+    throw new Error("NetMirror: failed to resolve API URL");
   });
 }
-function buildNewTvHeaders(ott, extra = {}) {
-  return __spreadValues(__spreadProps(__spreadValues({}, NEW_TV_BASE_HEADERS), {
-    "Ott": ott
-  }), extra);
+function normalize(s) {
+  return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
-
-// src/netmirror/index.js
-function getStreams(tmdbId, mediaType, season, episode) {
-  return __async(this, null, function* () {
-    try {
-      const tmdbType = mediaType === "tv" ? "tv" : "movie";
-      const tmdbResp = yield fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${TMDB_API_KEY}`, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-          "Accept": "application/json"
-        }
-      });
-      const tmdbData = yield tmdbResp.json();
-      const title = mediaType === "tv" ? tmdbData.name : tmdbData.title;
-      if (!title)
-        throw new Error("Could not fetch title from TMDB");
-      const platforms = ["netflix", "primevideo", "hotstar", "disney"];
-      for (const platformKey of platforms) {
-        try {
-          const streams = yield fetchFromPlatform(platformKey, title, mediaType, season, episode);
-          if (streams && streams.length > 0)
-            return streams;
-        } catch (e) {
-        }
-      }
-      return [];
-    } catch (error) {
-      return [];
-    }
-  });
+function parseSeasonNumber(s) {
+  const m = String(s || "").match(/\d+/);
+  return m ? parseInt(m[0], 10) : null;
 }
-function fetchFromPlatform(platformKey, title, mediaType, season, episode) {
+function resolveForPlatform(apiBase, ott, title, mediaType, season, episode) {
   return __async(this, null, function* () {
-    const platform = PLATFORM_MAP[platformKey];
-    const apiBase = yield resolveApiUrl();
-    const searchUrl = `${apiBase}/newtv/search.php?s=${encodeURIComponent(title)}`;
-    const searchResp = yield fetch(searchUrl, {
-      headers: buildNewTvHeaders(platform.ott)
+    var _a, _b;
+    const r = yield fetch(`${apiBase}/newtv/search.php?s=${encodeURIComponent(title)}`, {
+      headers: __spreadProps(__spreadValues({}, NEWTV_HEADERS), { Ott: ott })
     });
-    const searchData = yield searchResp.json();
-    if (!searchData.searchResult || searchData.searchResult.length === 0)
+    const data = yield r.json();
+    if (!((_a = data.searchResult) == null ? void 0 : _a.length))
       return null;
-    const result = searchData.searchResult[0];
-    const contentId = result.id;
-    const postUrl = `${apiBase}/newtv/post.php?id=${contentId}`;
-    const postResp = yield fetch(postUrl, {
-      headers: buildNewTvHeaders(platform.ott, { Lastep: "", Usertoken: "" })
+    const wanted = normalize(title);
+    const results = [...data.searchResult];
+    results.sort((a, b) => {
+      const an = normalize(a.t), bn = normalize(b.t);
+      if (an === wanted && bn !== wanted)
+        return -1;
+      if (bn === wanted && an !== wanted)
+        return 1;
+      return 0;
     });
-    const postData = yield postResp.json();
-    let targetId = contentId;
-    if (mediaType === "tv") {
-      const episodes = yield getAllEpisodes(contentId, postData, platform, apiBase);
-      const targetEp = episodes.find((ep) => ep && ep.s === season && ep.ep === episode);
-      if (targetEp) {
-        targetId = targetEp.id;
+    for (const result of results.slice(0, 3)) {
+      const postR = yield fetch(`${apiBase}/newtv/post.php?id=${result.id}`, {
+        headers: __spreadProps(__spreadValues({}, NEWTV_HEADERS), { Ott: ott, Lastep: "", Usertoken: "" })
+      });
+      const post = yield postR.json();
+      let targetId;
+      if (mediaType === "movie") {
+        if (post.type === "t")
+          continue;
+        targetId = post.main_id || result.id;
       } else {
-        return null;
-      }
-    } else {
-      const isSeries = postData.type === "t" || postData.episodes && postData.episodes.filter((e) => e !== null).length > 0;
-      if (isSeries)
-        return null;
-      targetId = postData.main_id || contentId;
-    }
-    const playerUrl = `${apiBase}/newtv/player.php?id=${targetId}`;
-    const playerResp = yield fetch(playerUrl, {
-      headers: buildNewTvHeaders(platform.ott, { "Usertoken": "" })
-    });
-    const response = yield playerResp.json();
-    if (response.status === "ok" && response.video_link) {
-      return [{
-        name: `NetMirror (${platformKey.charAt(0).toUpperCase() + platformKey.slice(1)})`,
-        title: `${title}`,
-        url: response.video_link,
-        quality: "Auto",
-        headers: {
-          Referer: response.referer || apiBase
+        const episodes = [];
+        const embedded = (post.episodes || []).filter(Boolean);
+        if (embedded.length) {
+          const selSeason = (post.season || []).find((s) => s.selected);
+          const selNum = selSeason ? parseSeasonNumber(selSeason.s) : parseSeasonNumber((_b = embedded[0].info) == null ? void 0 : _b[1]);
+          for (const ep2 of embedded) {
+            episodes.push({ id: ep2.id, s: selNum, ep: parseInt(ep2.ep, 10) });
+          }
         }
-      }];
+        for (const s of post.season || []) {
+          if (s.selected)
+            continue;
+          const sNum = parseSeasonNumber(s.s);
+          let page = 1;
+          for (let i = 0; i < 20; i++) {
+            const epR = yield fetch(`${apiBase}/newtv/episodes.php?id=${s.id}&page=${page}`, {
+              headers: __spreadProps(__spreadValues({}, NEWTV_HEADERS), { Ott: ott })
+            });
+            const epData = yield epR.json();
+            for (const ep2 of (epData.episodes || []).filter(Boolean)) {
+              episodes.push({ id: ep2.id, s: sNum, ep: parseInt(ep2.ep, 10) });
+            }
+            if (epData.nextPageShow !== 1)
+              break;
+            page++;
+          }
+        }
+        const ep = episodes.find((e) => e.s == season && e.ep == episode);
+        if (!ep)
+          continue;
+        targetId = ep.id;
+      }
+      const playerR = yield fetch(`${apiBase}/newtv/player.php?id=${targetId}`, {
+        headers: __spreadProps(__spreadValues({}, NEWTV_HEADERS), { Ott: ott, Usertoken: "" })
+      });
+      const player = yield playerR.json();
+      if (player.status === "ok" && player.video_link) {
+        return { url: player.video_link, referer: player.referer || apiBase };
+      }
     }
     return null;
   });
 }
-function getAllEpisodes(contentId, postData, platform, apiBase) {
+function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
-    const episodes = [];
-    const selectedSeasonIdx = postData.season ? postData.season.findIndex((s) => s.selected === true) : -1;
-    const selectedSeasonId = selectedSeasonIdx >= 0 ? postData.season[selectedSeasonIdx].id : postData.nextPageSeason;
-    const selectedSeasonNumber = selectedSeasonIdx >= 0 ? selectedSeasonIdx + 1 : null;
-    if (postData.episodes) {
-      postData.episodes.filter((e) => e !== null).forEach((ep) => {
-        const epNum = ep.ep ? parseInt(ep.ep) : ep.epNum ? parseInt(ep.epNum.replace("E", "")) : null;
-        const sNum = selectedSeasonNumber || (ep.sNum ? parseInt(ep.sNum.replace("S", "")) : null);
-        episodes.push({
-          id: ep.id,
-          s: sNum,
-          ep: epNum
-        });
-      });
-    }
-    if (postData.nextPageShow === 1 && selectedSeasonId) {
-      const more = yield fetchEpisodesPage(contentId, selectedSeasonId, 2, selectedSeasonNumber, platform, apiBase);
-      episodes.push(...more);
-    }
-    if (postData.season) {
-      for (let index = 0; index < postData.season.length; index++) {
-        const season = postData.season[index];
-        if (season.id !== selectedSeasonId && season.id) {
-          const more = yield fetchEpisodesPage(contentId, season.id, 1, index + 1, platform, apiBase);
-          episodes.push(...more);
+    try {
+      const tmdbType = mediaType === "tv" ? "tv" : "movie";
+      const tmdbR = yield fetch(
+        `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${TMDB_API_KEY}`
+      );
+      const tmdbData = yield tmdbR.json();
+      const title = mediaType === "tv" ? tmdbData.name : tmdbData.title;
+      if (!title)
+        return [];
+      console.log(`[NetMirror] ${mediaType} "${title}" S${season}E${episode}`);
+      const apiBase = yield resolveApiUrl();
+      const streams = [];
+      const seen = /* @__PURE__ */ new Set();
+      for (const { key, name } of PLATFORMS) {
+        try {
+          const result = yield resolveForPlatform(apiBase, key, title, mediaType, season, episode);
+          if (result && !seen.has(result.url)) {
+            seen.add(result.url);
+            streams.push({
+              name: `NetMirror / ${name}`,
+              title: mediaType === "tv" ? `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")} \u2022 HLS` : `${title} \u2022 HLS`,
+              url: result.url,
+              quality: "Auto",
+              headers: { Referer: result.referer }
+            });
+          }
+        } catch (e) {
+          console.log(`[NetMirror] ${key} failed: ${e.message}`);
         }
       }
+      console.log(`[NetMirror] ${streams.length} stream(s) found`);
+      return streams;
+    } catch (e) {
+      console.error(`[NetMirror] Fatal: ${e.message}`);
+      return [];
     }
-    return episodes;
-  });
-}
-function fetchEpisodesPage(contentId, seasonId, page, seasonNumber, platform, apiBase) {
-  return __async(this, null, function* () {
-    const episodes = [];
-    let pg = page;
-    while (true) {
-      const url = `${apiBase}/newtv/episodes.php?id=${seasonId}&page=${pg}`;
-      const resp = yield fetch(url, {
-        headers: buildNewTvHeaders(platform.ott)
-      });
-      const data = yield resp.json();
-      if (data.episodes) {
-        data.episodes.filter((e) => e !== null).forEach((ep) => {
-          const epNum = ep.ep ? parseInt(ep.ep) : ep.epNum ? parseInt(ep.epNum.replace("E", "")) : null;
-          const sNum = seasonNumber || (ep.sNum ? parseInt(ep.sNum.replace("S", "")) : null);
-          episodes.push({
-            id: ep.id,
-            s: sNum,
-            ep: epNum
-          });
-        });
-      }
-      if (data.nextPageShow !== 1)
-        break;
-      pg++;
-    }
-    return episodes;
   });
 }
 module.exports = { getStreams };
