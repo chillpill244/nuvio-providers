@@ -1,0 +1,27 @@
+{
+  "name": "4KHDHub",
+  "version": "1.0.0",
+  "scrapers": [
+    {
+      "id": "fourkhdhub",
+      "name": "4KHDHub",
+      "description": "Movies and TV series in up to 4K from 4KHDHub (HubCloud direct links).",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "../providers/fourkhdhub.js",
+      "enabled": true,
+      "hasSettings": false,
+      "logo": "https://4khdhub.one/favicon.ico",
+      "contentLanguage": [
+        "en",
+        "hi"
+      ],
+      "disabledPlatforms": [],
+      "supportsExternalPlayer": false
+    }
+  ]
+}

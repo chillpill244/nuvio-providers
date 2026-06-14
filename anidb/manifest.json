@@ -1,0 +1,26 @@
+{
+  "name": "AniDB",
+  "version": "1.0.0",
+  "scrapers": [
+    {
+      "id": "anidb",
+      "name": "AniDB",
+      "description": "Subbed and dubbed anime from AniDB. Site uses a Cloudflare TLS-fingerprint challenge; resolves on Android (native TLS) but not in desktop/CI tests.",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "../providers/anidb.js",
+      "enabled": true,
+      "hasSettings": false,
+      "logo": "https://anidb.app/favicon.ico",
+      "contentLanguage": [
+        "en"
+      ],
+      "disabledPlatforms": [],
+      "supportsExternalPlayer": false
+    }
+  ]
+}
