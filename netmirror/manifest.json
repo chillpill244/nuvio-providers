@@ -12,7 +12,7 @@
         "movie",
         "tv"
       ],
-      "filename": "providers/netmirror.js",
+      "filename": "../providers/netmirror.js",
       "enabled": true,
       "hasSettings": true,
       "logo": "https://net22.cc/favicon.ico",
