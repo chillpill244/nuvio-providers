@@ -1,0 +1,26 @@
+{
+  "name": "Toonstream",
+  "version": "1.0.0",
+  "scrapers": [
+    {
+      "id": "toonstream",
+      "name": "Toonstream",
+      "description": "Hindi-dubbed anime, cartoons and animated movies from Toonstream.",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/toonstream.js",
+      "enabled": true,
+      "hasSettings": false,
+      "logo": "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/Icons/toonstream.png",
+      "contentLanguage": [
+        "hi"
+      ],
+      "disabledPlatforms": [],
+      "supportsExternalPlayer": false
+    }
+  ]
+}

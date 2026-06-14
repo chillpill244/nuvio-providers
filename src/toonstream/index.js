@@ -132,55 +132,99 @@ async function getSeasonEpisodes(domain, dataPost, dataSeason) {
   return episodes;
 }
 
-async function findEpisodeUrl(domain, post, targetSeason, targetEpisode) {
-  for (let si = 0; si < post.seasons.length; si++) {
-    const s = post.seasons[si];
-    let eps;
-    try {
-      eps = await getSeasonEpisodes(domain, s.dataPost, s.dataSeason);
-    } catch (_) { continue; }
-    for (let ei = 0; ei < eps.length; ei++) {
-      if (eps[ei].season === targetSeason && eps[ei].episode === targetEpisode) {
-        return eps[ei].url;
-      }
+async function findInSeason(domain, s, targetSeason, targetEpisode) {
+  let eps;
+  try {
+    eps = await getSeasonEpisodes(domain, s.dataPost, s.dataSeason);
+  } catch (_) { return null; }
+  for (let ei = 0; ei < eps.length; ei++) {
+    if (eps[ei].season === targetSeason && eps[ei].episode === targetEpisode) {
+      return eps[ei].url;
     }
   }
   return null;
+}
+
+async function findEpisodeUrl(domain, post, targetSeason, targetEpisode) {
+  // Query the season whose data-season matches first; only fan out to the rest if it misses.
+  const preferred = [];
+  const rest = [];
+  for (let si = 0; si < post.seasons.length; si++) {
+    const s = post.seasons[si];
+    if (parseInt(s.dataSeason, 10) === targetSeason) preferred.push(s);
+    else rest.push(s);
+  }
+  const groups = [preferred, rest];
+  for (let gi = 0; gi < groups.length; gi++) {
+    const group = groups[gi];
+    if (!group.length) continue;
+    const found = await Promise.all(group.map(function (s) {
+      return findInSeason(domain, s, targetSeason, targetEpisode);
+    }));
+    for (let i = 0; i < found.length; i++) {
+      if (found[i]) return found[i];
+    }
+  }
+  return null;
+}
+
+async function getTrembedSrc(dataSrc, pageUrl) {
+  try {
+    const r2 = await fetch(dataSrc, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Referer": pageUrl,
+        "Sec-Fetch-Dest": "iframe",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+      },
+    });
+    const html2 = await r2.text();
+    const $2 = cheerio.load(html2);
+    let src = $2("iframe").first().attr("src") || $2("iframe").first().attr("data-src") || "";
+    if (!src) return null;
+    if (src.indexOf("//") === 0) src = "https:" + src;
+    return src;
+  } catch (_) { return null; }
 }
 
 async function getVideoLinks(pageUrl) {
   const r = await fetch(pageUrl, { headers: { "User-Agent": USER_AGENT } });
   const html = await r.text();
   const $ = cheerio.load(html);
-  const links = [];
-  const iframes = $("#aa-options > div > iframe[data-src]");
+  const iframes = $("#aa-options > div > iframe");
+  const dataSrcs = [];
   for (let i = 0; i < iframes.length; i++) {
-    const dataSrc = $(iframes[i]).attr("data-src") || "";
-    if (!dataSrc) continue;
-    try {
-      const r2 = await fetch(dataSrc, { headers: { "User-Agent": USER_AGENT } });
-      const html2 = await r2.text();
-      const $2 = cheerio.load(html2);
-      const src = $2("iframe").first().attr("src") || "";
-      if (src) links.push(src);
-    } catch (_) {}
+    const dataSrc = $(iframes[i]).attr("data-src") || $(iframes[i]).attr("src") || "";
+    if (dataSrc) dataSrcs.push(dataSrc);
+  }
+  // Fetch every server's trembed page concurrently — sequential fetches blow the time budget.
+  const resolved = await Promise.all(dataSrcs.map(function (ds) { return getTrembedSrc(ds, pageUrl); }));
+  const links = [];
+  for (let i = 0; i < resolved.length; i++) {
+    if (resolved[i]) links.push(resolved[i]);
   }
   return links;
 }
 
 async function extractAWSStream(url) {
-  const hash = url.split("/").pop();
-  const base = url.slice(0, url.lastIndexOf("/"));
+  // URL shape is e.g. https://as-cdn21.top/video/<hash>. The getVideo endpoint lives at the
+  // site origin (/player/index.php), not the directory the hash sits in, and the `r` referer
+  // must be that origin too — that's what the player JS posts.
+  const hash = url.split("/").pop().split("?")[0];
+  const m = url.match(/^(https?:\/\/[^/]+)/);
+  const origin = m ? m[1] : url.slice(0, url.lastIndexOf("/"));
   const r = await fetch(
-    base + "/player/index.php?data=" + hash + "&do=getVideo",
+    origin + "/player/index.php?data=" + hash + "&do=getVideo",
     {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         "x-requested-with": "XMLHttpRequest",
+        "Referer": url,
         "User-Agent": USER_AGENT,
       },
-      body: "hash=" + encodeURIComponent(hash) + "&r=" + encodeURIComponent(base),
+      body: "hash=" + encodeURIComponent(hash) + "&r=" + encodeURIComponent(origin),
     }
   );
   const data = await r.json();
@@ -242,11 +286,21 @@ async function extractGDMirrorbot(url) {
 
 async function resolveVideoLink(url) {
   try {
-    if (url.indexOf("awstream") !== -1 || url.indexOf("zephyrflick") !== -1) return await extractAWSStream(url);
+    if (url.indexOf("awstream") !== -1 || url.indexOf("zephyrflick") !== -1 || url.indexOf("as-cdn") !== -1) return await extractAWSStream(url);
     if (url.indexOf("streamruby") !== -1) return await extractStreamruby(url);
     if (url.indexOf("gdmirrorbot") !== -1 || url.indexOf("techinmind") !== -1) return await extractGDMirrorbot(url);
   } catch (_) {}
   return null;
+}
+
+function orderVideoLinks(links) {
+  // Try the AWS-mechanism CDN hosts (as-cdn*/awstream) first — they resolve to a direct
+  // token-authed m3u8 reliably, unlike the obfuscated players (abyss) we can't crack.
+  return links.slice().sort(function (a, b) {
+    const aw = (a.indexOf("as-cdn") !== -1 || a.indexOf("awstream") !== -1 || a.indexOf("zephyrflick") !== -1) ? 1 : 0;
+    const bw = (b.indexOf("as-cdn") !== -1 || b.indexOf("awstream") !== -1 || b.indexOf("zephyrflick") !== -1) ? 1 : 0;
+    return bw - aw;
+  });
 }
 
 async function getStreams(tmdbId, mediaType, season, episode) {
@@ -277,7 +331,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       }
 
       let videoLinks = [];
-      try { videoLinks = await getVideoLinks(pageUrl); } catch (_) { continue; }
+      try { videoLinks = orderVideoLinks(await getVideoLinks(pageUrl)); } catch (_) { continue; }
 
       for (let vi = 0; vi < videoLinks.length; vi++) {
         let resolved = null;

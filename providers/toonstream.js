@@ -1,6 +1,6 @@
 /**
  * toonstream - Built from src/toonstream/
- * Generated: 2026-06-13T22:36:52.292Z
+ * Generated: 2026-06-14T05:04:41.957Z
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -166,23 +166,72 @@ function getSeasonEpisodes(domain, dataPost, dataSeason) {
     return episodes;
   });
 }
-function findEpisodeUrl(domain, post, targetSeason, targetEpisode) {
+function findInSeason(domain, s, targetSeason, targetEpisode) {
   return __async(this, null, function* () {
-    for (let si = 0; si < post.seasons.length; si++) {
-      const s = post.seasons[si];
-      let eps;
-      try {
-        eps = yield getSeasonEpisodes(domain, s.dataPost, s.dataSeason);
-      } catch (_) {
-        continue;
-      }
-      for (let ei = 0; ei < eps.length; ei++) {
-        if (eps[ei].season === targetSeason && eps[ei].episode === targetEpisode) {
-          return eps[ei].url;
-        }
+    let eps;
+    try {
+      eps = yield getSeasonEpisodes(domain, s.dataPost, s.dataSeason);
+    } catch (_) {
+      return null;
+    }
+    for (let ei = 0; ei < eps.length; ei++) {
+      if (eps[ei].season === targetSeason && eps[ei].episode === targetEpisode) {
+        return eps[ei].url;
       }
     }
     return null;
+  });
+}
+function findEpisodeUrl(domain, post, targetSeason, targetEpisode) {
+  return __async(this, null, function* () {
+    const preferred = [];
+    const rest = [];
+    for (let si = 0; si < post.seasons.length; si++) {
+      const s = post.seasons[si];
+      if (parseInt(s.dataSeason, 10) === targetSeason)
+        preferred.push(s);
+      else
+        rest.push(s);
+    }
+    const groups = [preferred, rest];
+    for (let gi = 0; gi < groups.length; gi++) {
+      const group = groups[gi];
+      if (!group.length)
+        continue;
+      const found = yield Promise.all(group.map(function(s) {
+        return findInSeason(domain, s, targetSeason, targetEpisode);
+      }));
+      for (let i = 0; i < found.length; i++) {
+        if (found[i])
+          return found[i];
+      }
+    }
+    return null;
+  });
+}
+function getTrembedSrc(dataSrc, pageUrl) {
+  return __async(this, null, function* () {
+    try {
+      const r2 = yield fetch(dataSrc, {
+        headers: {
+          "User-Agent": USER_AGENT,
+          "Referer": pageUrl,
+          "Sec-Fetch-Dest": "iframe",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "same-origin"
+        }
+      });
+      const html2 = yield r2.text();
+      const $2 = cheerio.load(html2);
+      let src = $2("iframe").first().attr("src") || $2("iframe").first().attr("data-src") || "";
+      if (!src)
+        return null;
+      if (src.indexOf("//") === 0)
+        src = "https:" + src;
+      return src;
+    } catch (_) {
+      return null;
+    }
   });
 }
 function getVideoLinks(pageUrl) {
@@ -190,39 +239,40 @@ function getVideoLinks(pageUrl) {
     const r = yield fetch(pageUrl, { headers: { "User-Agent": USER_AGENT } });
     const html = yield r.text();
     const $ = cheerio.load(html);
-    const links = [];
-    const iframes = $("#aa-options > div > iframe[data-src]");
+    const iframes = $("#aa-options > div > iframe");
+    const dataSrcs = [];
     for (let i = 0; i < iframes.length; i++) {
-      const dataSrc = $(iframes[i]).attr("data-src") || "";
-      if (!dataSrc)
-        continue;
-      try {
-        const r2 = yield fetch(dataSrc, { headers: { "User-Agent": USER_AGENT } });
-        const html2 = yield r2.text();
-        const $2 = cheerio.load(html2);
-        const src = $2("iframe").first().attr("src") || "";
-        if (src)
-          links.push(src);
-      } catch (_) {
-      }
+      const dataSrc = $(iframes[i]).attr("data-src") || $(iframes[i]).attr("src") || "";
+      if (dataSrc)
+        dataSrcs.push(dataSrc);
+    }
+    const resolved = yield Promise.all(dataSrcs.map(function(ds) {
+      return getTrembedSrc(ds, pageUrl);
+    }));
+    const links = [];
+    for (let i = 0; i < resolved.length; i++) {
+      if (resolved[i])
+        links.push(resolved[i]);
     }
     return links;
   });
 }
 function extractAWSStream(url) {
   return __async(this, null, function* () {
-    const hash = url.split("/").pop();
-    const base = url.slice(0, url.lastIndexOf("/"));
+    const hash = url.split("/").pop().split("?")[0];
+    const m = url.match(/^(https?:\/\/[^/]+)/);
+    const origin = m ? m[1] : url.slice(0, url.lastIndexOf("/"));
     const r = yield fetch(
-      base + "/player/index.php?data=" + hash + "&do=getVideo",
+      origin + "/player/index.php?data=" + hash + "&do=getVideo",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           "x-requested-with": "XMLHttpRequest",
+          "Referer": url,
           "User-Agent": USER_AGENT
         },
-        body: "hash=" + encodeURIComponent(hash) + "&r=" + encodeURIComponent(base)
+        body: "hash=" + encodeURIComponent(hash) + "&r=" + encodeURIComponent(origin)
       }
     );
     const data = yield r.json();
@@ -294,7 +344,7 @@ function extractGDMirrorbot(url) {
 function resolveVideoLink(url) {
   return __async(this, null, function* () {
     try {
-      if (url.indexOf("awstream") !== -1 || url.indexOf("zephyrflick") !== -1)
+      if (url.indexOf("awstream") !== -1 || url.indexOf("zephyrflick") !== -1 || url.indexOf("as-cdn") !== -1)
         return yield extractAWSStream(url);
       if (url.indexOf("streamruby") !== -1)
         return yield extractStreamruby(url);
@@ -303,6 +353,13 @@ function resolveVideoLink(url) {
     } catch (_) {
     }
     return null;
+  });
+}
+function orderVideoLinks(links) {
+  return links.slice().sort(function(a, b) {
+    const aw = a.indexOf("as-cdn") !== -1 || a.indexOf("awstream") !== -1 || a.indexOf("zephyrflick") !== -1 ? 1 : 0;
+    const bw = b.indexOf("as-cdn") !== -1 || b.indexOf("awstream") !== -1 || b.indexOf("zephyrflick") !== -1 ? 1 : 0;
+    return bw - aw;
   });
 }
 function getStreams(tmdbId, mediaType, season, episode) {
@@ -338,7 +395,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         }
         let videoLinks = [];
         try {
-          videoLinks = yield getVideoLinks(pageUrl);
+          videoLinks = orderVideoLinks(yield getVideoLinks(pageUrl));
         } catch (_) {
           continue;
         }

@@ -1,0 +1,28 @@
+{
+  "name": "NetMirror",
+  "version": "1.0.3",
+  "scrapers": [
+    {
+      "id": "netmirror",
+      "name": "NetMirror",
+      "description": "Streaming links from NetMirror (Netflix, Prime Video, Hotstar, Disney+). Automatically disabled on iOS due to compatibility issues.",
+      "version": "1.0.3",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/netmirror.js",
+      "enabled": true,
+      "hasSettings": true,
+      "logo": "https://net22.cc/favicon.ico",
+      "contentLanguage": [
+        "en"
+      ],
+      "disabledPlatforms": [
+        "ios"
+      ],
+      "supportsExternalPlayer": false
+    }
+  ]
+}
