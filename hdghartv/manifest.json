@@ -1,0 +1,27 @@
+{
+  "name": "HDGharTV",
+  "version": "1.0.0",
+  "scrapers": [
+    {
+      "id": "hdghartv",
+      "name": "HDGharTV",
+      "description": "High quality streams and Dual-Audio movies from HDGharTV.",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "../providers/hdghartv.js",
+      "enabled": true,
+      "hasSettings": false,
+      "logo": "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/Icons/hdghartv.png",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ],
+      "disabledPlatforms": [],
+      "supportsExternalPlayer": false
+    }
+  ]
+}
