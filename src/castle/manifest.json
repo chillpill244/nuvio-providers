@@ -1,0 +1,10 @@
+{
+    "id": "castle",
+    "name": "Castle",
+    "version": "1.0.0",
+    "description": "Castle Provider",
+    "author": "nuvio",
+    "iconUrl": "https://raw.githubusercontent.com/arflix/arflix/main/logo.png",
+    "types": ["movie", "tv"],
+    "language": "en"
+}

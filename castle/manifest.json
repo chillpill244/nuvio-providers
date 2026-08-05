@@ -1,0 +1,26 @@
+{
+  "name": "Castle",
+  "version": "1.0.0",
+  "scrapers": [
+    {
+      "id": "castle",
+      "name": "Castle",
+      "description": "Castle Provider for movies and TV series.",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "../providers/castle.js",
+      "enabled": true,
+      "hasSettings": false,
+      "logo": "https://raw.githubusercontent.com/arflix/arflix/main/logo.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "disabledPlatforms": [],
+      "supportsExternalPlayer": false
+    }
+  ]
+}

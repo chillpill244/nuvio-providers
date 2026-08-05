@@ -1,6 +1,6 @@
 /**
  * hdghartv - Built from src/hdghartv/
- * Generated: 2026-08-05T02:49:46.089Z
+ * Generated: 2026-08-05T03:41:45.953Z
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -79,8 +79,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
           }
         }
       }
-      if (!streamingLinks || streamingLinks.length === 0)
-        return [];
+      const displayTitle = isTv ? `\u{1F4FA} ${titleName} - S${season || 1}E${episode || 1}` : `\u{1F3A6} ${titleName}`;
       const results = [];
       streamingLinks.forEach((linkObj) => {
         const url = linkObj.url;
@@ -93,7 +92,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
 ${icon} ${quality} | \u{1F50A} ${audio}
 \u{1F6F0}\uFE0F Source: HDGharTV`;
           results.push({
-            name: `HDGharTV | ${quality}`,
+            name: displayTitle,
             title: desc,
             description: desc,
             size: desc,

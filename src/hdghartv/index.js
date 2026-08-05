@@ -64,8 +64,10 @@ async function getStreams(tmdbId, mediaType, season, episode) {
             }
         }
         
-        if (!streamingLinks || streamingLinks.length === 0) return [];
-        
+        const displayTitle = isTv 
+            ? `📺 ${titleName} - S${season || 1}E${episode || 1}`
+            : `🎦 ${titleName}`;
+            
         const results = [];
         streamingLinks.forEach(linkObj => {
             const url = linkObj.url;
@@ -79,7 +81,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
                 const desc = `⚡ ${format}\n${icon} ${quality} | 🔊 ${audio}\n🛰️ Source: HDGharTV`;
                 
                 results.push({
-                    name: `HDGharTV | ${quality}`,
+                    name: displayTitle,
                     title: desc,
                     description: desc,
                     size: desc,

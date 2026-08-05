@@ -1,6 +1,6 @@
 /**
  * anidb - Built from src/anidb/
- * Generated: 2026-08-05T02:49:46.079Z
+ * Generated: 2026-08-05T03:41:45.935Z
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
