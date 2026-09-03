@@ -1,0 +1,27 @@
+{
+  "name": "MoviesDrive",
+  "version": "1.0.0",
+  "scrapers": [
+    {
+      "id": "moviesdrive",
+      "name": "MoviesDrive",
+      "description": "Movies and TV series from MoviesDrive.",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "../providers/moviesdrive.js",
+      "enabled": true,
+      "hasSettings": false,
+      "logo": "https://new1.moviesdrive.surf/favicon.ico",
+      "contentLanguage": [
+        "en",
+        "hi"
+      ],
+      "disabledPlatforms": [],
+      "supportsExternalPlayer": false
+    }
+  ]
+}
